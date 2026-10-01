@@ -24,6 +24,8 @@ import { SearchHelpModal } from './components/SearchHelpModal';
 import { Footer } from './components/Footer';
 import { BUS_SERVICES_DATA, BUS_STOPS_MAP } from './data/transitData';
 import { transitAudio } from './utils/audio';
+import { fetchBusArrivals, mapRawBusToPrediction } from './services/ltaApi';
+import { BusService } from './types/transit';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<ActiveTab>('bus-arrival');
@@ -31,6 +33,7 @@ export default function App() {
   const [direction, setDirection] = useState<1 | 2>(1);
   const [currentStopCode, setCurrentStopCode] = useState<string>('09037');
   const [currentArea, setCurrentArea] = useState<string>('Dhoby Ghaut / Orchard Area, Singapore');
+  const [servicesData, setServicesData] = useState<Record<string, BusService>>(BUS_SERVICES_DATA);
 
   // Bookmarks
   const [bookmarkedStops, setBookmarkedStops] = useState<string[]>(() => {
@@ -48,6 +51,55 @@ export default function App() {
   const [isFavoritesOpen, setIsFavoritesOpen] = useState(false);
   const [isFeedbackOpen, setIsFeedbackOpen] = useState(false);
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  // Poll LTA DataMall v3 every 20 seconds (as specified by LTA v3 refresh cycle)
+  useEffect(() => {
+    let isCancelled = false;
+
+    async function loadLtaArrivals() {
+      const result = await fetchBusArrivals(currentStopCode);
+      if (!result || !result.Services || isCancelled) return;
+
+      setServicesData((prev) => {
+        const nextState = { ...prev };
+
+        result.Services.forEach((svc) => {
+          const sNo = svc.ServiceNo;
+          if (nextState[sNo]) {
+            const currentObj = nextState[sNo];
+            const p1 = mapRawBusToPrediction(svc.NextBus);
+            const p2 = mapRawBusToPrediction(svc.NextBus2);
+            const p3 = mapRawBusToPrediction(svc.NextBus3);
+
+            const updatedArrivals: [any, any, any] = [
+              p1 || currentObj.direction1.arrivals[0],
+              p2 || currentObj.direction1.arrivals[1],
+              p3 || currentObj.direction1.arrivals[2],
+            ];
+
+            nextState[sNo] = {
+              ...currentObj,
+              direction1: {
+                ...currentObj.direction1,
+                arrivals: updatedArrivals,
+                currentSpeedKmh: svc.NextBus?.Latitude ? 28 : currentObj.direction1.currentSpeedKmh,
+                lastPingSecondsAgo: 2,
+              },
+            };
+          }
+        });
+
+        return nextState;
+      });
+    }
+
+    loadLtaArrivals();
+    const interval = setInterval(loadLtaArrivals, 20000);
+    return () => {
+      isCancelled = true;
+      clearInterval(interval);
+    };
+  }, [currentStopCode]);
 
   useEffect(() => {
     try {
@@ -70,7 +122,7 @@ export default function App() {
   };
 
   const handleSelectService = (serviceNo: string) => {
-    if (BUS_SERVICES_DATA[serviceNo]) {
+    if (servicesData[serviceNo] || BUS_SERVICES_DATA[serviceNo]) {
       setSelectedServiceNo(serviceNo);
     }
   };
@@ -81,8 +133,9 @@ export default function App() {
     }
   };
 
-  const currentService = BUS_SERVICES_DATA[selectedServiceNo] || BUS_SERVICES_DATA['65'];
+  const currentService = servicesData[selectedServiceNo] || BUS_SERVICES_DATA[selectedServiceNo] || BUS_SERVICES_DATA['65'];
   const currentStop = BUS_STOPS_MAP[currentStopCode] || BUS_STOPS_MAP['09037'];
+
 
   return (
     <div className="min-h-screen bg-[#F4F5F7] text-[#191c21] flex flex-col font-sans">
