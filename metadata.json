@@ -1,0 +1,7 @@
+{
+  "name": "SBS Transit Live Bus Tracker",
+  "description": "Modern Singapore bus arrival portal with real-time LTA DataMall predictions, route trajectory, crowding indicators, and transit guide.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
+
